@@ -190,6 +190,10 @@ make & enjoy!
     - PlayStation 3 Eye
     - Logitech C920
     - Odroid USB-CAM 720P
+    
+17th patch: May 9, 2015, Matt Sandler
+ added supported for CV_CAP_PROP_POS_MSEC, CV_CAP_PROP_POS_FRAMES, CV_CAP_PROP_FPS
+        
 */
 
 /*M///////////////////////////////////////////////////////////////////////////////////////
@@ -333,6 +337,11 @@ typedef struct CvCaptureCAM_V4L
    enum v4l2_buf_type type;
    struct v4l2_queryctrl queryctrl;
 
+   struct timeval timestamp;   
+   
+   /** value set the buffer of V4L*/
+   int sequence; 
+   
    /* V4L2 control variables */
    v4l2_ctrl_range** v4l2_ctrl_ranges;
    int v4l2_ctrl_count;
@@ -1123,6 +1132,11 @@ static int read_frame_v4l2(CvCaptureCAM_V4L* capture) {
 
    if (-1 == xioctl (capture->deviceHandle, VIDIOC_QBUF, &buf))
        perror ("VIDIOC_QBUF");
+   
+   //set timestamp in capture struct to be timestamp of most recent frame
+   /** where timestamps refer to the instant the field or frame was received by the driver, not the capture time*/ 
+   capture->timestamp = buf.timestamp;   //printf( "timestamp update done \n"); 
+   capture->sequence = buf.sequence;   
 
    return 1;
 }
@@ -1243,9 +1257,9 @@ static int icvGrabFrameCAM_V4L(CvCaptureCAM_V4L* capture) {
      capture->mmaps[capture->bufferIndex].format = capture->imageProperties.palette;
 
      if (v4l1_ioctl (capture->deviceHandle, VIDIOCMCAPTURE,
-    &capture->mmaps[capture->bufferIndex]) == -1) {
-   /* capture is on the way, so just exit */
-   return 1;
+           &capture->mmaps[capture->bufferIndex]) == -1) {
+	/* capture is on the way, so just exit */
+	return 1;
      }
 
      ++capture->bufferIndex;
@@ -1362,6 +1376,36 @@ static double icvGetPropertyCAM_V4L (CvCaptureCAM_V4L* capture,
         }
       }
       return (property_id == CV_CAP_PROP_FRAME_WIDTH)?capture->form.fmt.pix.width:capture->form.fmt.pix.height;
+
+    case CV_CAP_PROP_POS_MSEC:
+        if (capture->FirstCapture) {
+            return 0;
+        } else {
+            //would be maximally numerically stable to cast to convert as bits, but would also be counterintuitive to decode
+            return 1000 * capture->timestamp.tv_sec + ((double) capture->timestamp.tv_usec) / 1000;
+        }
+        break;      
+
+    case CV_CAP_PROP_POS_FRAMES:
+        return capture->sequence; 
+        break;      
+
+    case CV_CAP_PROP_FPS: { 
+        struct v4l2_streamparm sp;
+        memset (&sp, 0, sizeof(struct v4l2_streamparm));
+        sp.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        if (xioctl (capture->deviceHandle, VIDIOC_G_PARM, &sp) < 0){
+            fprintf(stderr, "VIDEOIO ERROR: V4L: Unable to get camera FPS\n");
+            return (double) -1; 
+        }
+
+        // this is the captureable, not per say what you'll get..
+        double framesPerSec = sp.parm.capture.timeperframe.denominator / (double)  sp.parm.capture.timeperframe.numerator ;	
+        return framesPerSec; 
+    }
+    break; 
+      
+      
     case CV_CAP_PROP_MODE:
       return capture->mode;
       break;
@@ -1507,12 +1551,17 @@ static int icvSetVideoSize( CvCaptureCAM_V4L* capture, int w, int h) {
     xioctl (capture->deviceHandle, VIDIOC_S_FMT, &capture->form);
 
     /* try to set framerate to 30 fps */
-    struct v4l2_streamparm setfps;
-    memset (&setfps, 0, sizeof(struct v4l2_streamparm));
-    setfps.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    setfps.parm.capture.timeperframe.numerator = 1;
-    setfps.parm.capture.timeperframe.denominator = 30;
-    xioctl (capture->deviceHandle, VIDIOC_S_PARM, &setfps);
+    if( false){
+      struct v4l2_streamparm setfps;
+      memset (&setfps, 0, sizeof(struct v4l2_streamparm));
+      
+      setfps.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+      setfps.parm.capture.timeperframe.numerator = 1;
+      setfps.parm.capture.timeperframe.denominator = 30;
+      
+      xioctl (capture->deviceHandle, VIDIOC_S_PARM, &setfps);
+      
+    }
 
     /* we need to re-initialize some things, like buffers, because the size has
      * changed */
