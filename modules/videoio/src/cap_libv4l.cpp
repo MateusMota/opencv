@@ -1551,17 +1551,16 @@ static int icvSetVideoSize( CvCaptureCAM_V4L* capture, int w, int h) {
     xioctl (capture->deviceHandle, VIDIOC_S_FMT, &capture->form);
 
     /* try to set framerate to 30 fps */
-    if( false){
-      struct v4l2_streamparm setfps;
-      memset (&setfps, 0, sizeof(struct v4l2_streamparm));
+    
+    struct v4l2_streamparm setfps;
+    memset (&setfps, 0, sizeof(struct v4l2_streamparm));
       
-      setfps.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-      setfps.parm.capture.timeperframe.numerator = 1;
-      setfps.parm.capture.timeperframe.denominator = 30;
+    setfps.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    setfps.parm.capture.timeperframe.numerator = 1;
+    setfps.parm.capture.timeperframe.denominator = 30;
       
-      xioctl (capture->deviceHandle, VIDIOC_S_PARM, &setfps);
+    xioctl (capture->deviceHandle, VIDIOC_S_PARM, &setfps);
       
-    }
 
     /* we need to re-initialize some things, like buffers, because the size has
      * changed */
